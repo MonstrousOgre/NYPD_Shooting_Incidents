@@ -1,0 +1,128 @@
+---
+title: "NYPD Shooting Incident Data"
+author: "Kash"
+date: "1/29/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=TRUE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+```
+
+
+This is a document that analyzes and visualizes the dataset from the [NYPD Shooting Incident Data (Historic)](https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD).
+
+## Summary
+
+Here is a summary of the data. The occurrence date has been converted to a column of type `date`, and the latitudes and longitudes have been removed since they aren't useful for our analysis.
+
+```{r summary, message=FALSE}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv"
+NYPD_shooting_incident <- read_csv(url_in)
+NYPD_shooting_incident <- NYPD_shooting_incident %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+NYPD_shooting_incident <- NYPD_shooting_incident %>% select(-c(X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat))
+summary(NYPD_shooting_incident)
+```
+
+## Shootings by Boro
+
+Here is the distribution of shootings incidents by Boro
+
+```{r boro, message=FALSE}
+shooting_by_boro <- NYPD_shooting_incident %>% count(BORO) %>% mutate(shootings = n)
+shooting_by_boro_bar <- ggplot(shooting_by_boro, aes(x="", y=shootings, fill=BORO)) +
+geom_bar(width = 1, stat = "identity")
+shooting_by_boro_pie <- shooting_by_boro_bar + coord_polar("y", start=0)+ geom_text(aes(label = shootings, "%"), position = position_stack(vjust = 0.5))
+shooting_by_boro_pie <- shooting_by_boro_pie + theme_classic() + theme(axis.line = element_blank(),
+          axis.text = element_blank(),
+          axis.ticks = element_blank(),
+          plot.title = element_text(hjust = 0.5))
+shooting_by_boro_pie
+```
+
+As you can see, majority of the shootings take place in either Bronx or Brooklyn
+
+## Victims by age and race
+
+As you can see below, the most common demographic for the victims in these incidents is black people in the age range of 18-44
+
+```{r agerace, message=FALSE}
+shooting_by_age_race <- NYPD_shooting_incident %>% count(VIC_AGE_GROUP, VIC_RACE) %>% mutate(shootings = n)
+ggplot(shooting_by_age_race, aes(VIC_AGE_GROUP, VIC_RACE, color = shootings)) +
+ geom_point(size = 3) +
+  scale_colour_gradient(low = "#0000FF",high = "#FF0000")
+```
+
+## Shootings by Date
+
+Let's look at the timeline of the shooting incidents for each day since 2006
+
+```{r bydate, message=FALSE}
+shootings_by_date <- NYPD_shooting_incident %>% count(OCCUR_DATE) %>% mutate(shootings = n)
+ggplot(shootings_by_date, aes(OCCUR_DATE, shootings)) +
+ geom_line()
+```
+
+This graph doesn't seem to tell us much since there are too many outliers. Let's analyze this further.
+
+# Further Analysis
+
+## Shootings by Month
+
+Here are the total number of shootings by each month
+
+```{r bymonth, message=FALSE}
+shootings_by_month <- shootings_by_date %>% 
+  group_by(month = lubridate::floor_date(OCCUR_DATE, "month")) %>%
+  summarize(shootings = sum(shootings))
+ggplot(shootings_by_month, aes(month, shootings)) +
+ geom_line()
+```
+
+This does give us a clearer picture than the previous graph. We're starting to see a pattern of the incidents dropping and then rising again. Let's see if the shootings by year tells us more.
+
+## Shootings by Year
+
+```{r byyear, message=FALSE}
+shootings_by_year <- shootings_by_date %>% 
+  group_by(year = lubridate::floor_date(OCCUR_DATE, "year")) %>%
+  summarize(shootings = sum(shootings))
+ggplot(shootings_by_year, aes(year, shootings)) +
+ geom_line()
+```
+
+As you can see, the graph has flattened out even more. This graph seems to suggest that 2006 had the highest number of shootings, even though the previous graph seems to suggest otherwise. This could be because the shootings that year were distributed throughout the year, instead of there being a spike for a few months like in 2020. Let us look for any outliers.
+
+## Outliers
+
+Here are the top ten months by the number of shootings.
+
+```{r outliers_max, message=FALSE}
+shootings_by_month %>% slice_max(shootings, n = 20) %>% print(n = 20)
+```
+
+As you can see, there are quite a few outliers in 2020 that raise the total number of shootings in that year.
+
+## Predictions
+
+```{r prediction, message=FALSE}
+mod <- lm(shootings ~ month, data = shootings_by_month)
+shootings_by_month_w_pred <- shootings_by_month %>% mutate(pred = predict(mod))
+shootings_by_month_w_pred %>% ggplot() +
+  geom_point(aes(x = month, y = shootings), color = "blue") +
+  geom_line(aes(x = month, y = pred), color = "red")
+```
+
+Excluding the outliers, the line in red gives us a general idea of how the number of shootings changes every month.
+
+# Conclusion
+
+These visualizations give us an idea about the locations of the shooting incidents, as well as the demographic of the victims. It also analyzes the timeline of how the total number of shootings changes over time.
+
+One possible source of bias is that the data chosen does not provide the actual population of the Boro and the demographic, which can give us more information about these shootings.
+
+A personal bias I have would be my alignment on most social and political issues, which I have mitigated by only presenting facts already available from the source of the dataset.
